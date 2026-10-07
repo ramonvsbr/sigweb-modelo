@@ -1,0 +1,109 @@
+# SIGWeb — Banco (PostGIS) + API (FastAPI) + Painel de cadastro (Django)
+# Uso: cp .env.example .env  (edite as senhas)  ->  docker compose up -d --build
+#
+# Na primeira inicialização do banco (volume vazio), a imagem PostGIS executa os
+# scripts de banco_de_dados/ na ordem numerada abaixo. Nas seguintes nada é
+# re-executado: num banco que já existe, quem atualiza o esquema é o serviço
+# sigweb-migrate, que aplica as migracao_NN_*.sql que ainda faltam.
+#
+# O frontend/ NÃO roda em container: é servido como arquivo estático (nginx),
+# ou, para testar, com `python -m http.server 5500` dentro de frontend/.
+
+services:
+  sigweb-db:
+    # imresamu/postgis = mesma imagem PostGIS, com suporte a arm64
+    # (a oficial postgis/postgis só publica amd64).
+    image: imresamu/postgis:15-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sigweb_caprinu
+      POSTGRES_USER: sigweb
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # A imagem cria a extensão PostGIS via "10_postgis.sh"; os prefixos
+      # 20_/30_ garantem que as tabelas venham depois dela.
+      - ./banco_de_dados/criacao_tabelas.sql:/docker-entrypoint-initdb.d/20_criacao_tabelas.sql:ro
+      - ./banco_de_dados/carga_inicial.sql:/docker-entrypoint-initdb.d/30_carga_inicial.sql:ro
+    # Publicado só no loopback: psql do host.
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      # O "-h 127.0.0.1" é essencial: durante o initdb a imagem sobe um servidor
+      # temporário que escuta só no socket unix, e um pg_isready sem host daria
+      # "healthy" antes de o banco aceitar conexões de rede.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U sigweb -d sigweb_caprinu"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Roda uma vez a cada `up` e sai: aplica as migrações de banco_de_dados/ que
+  # ainda faltam neste volume.
+  sigweb-migrate:
+    image: imresamu/postgis:15-3.5
+    restart: "no"
+    depends_on:
+      sigweb-db:
+        condition: service_healthy
+    environment:
+      DB_HOST: sigweb-db
+      DB_PORT: "5432"
+      DB_NAME: sigweb_caprinu
+      DB_USER: sigweb
+      DB_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./banco_de_dados:/migracoes:ro
+    # Sobrescreve o entrypoint da imagem (que subiria um servidor Postgres).
+    entrypoint: ["sh", "/migracoes/aplicar_migracoes.sh"]
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      sigweb-db:
+        condition: service_healthy
+      # Nunca serve dados por cima de um esquema desatualizado.
+      sigweb-migrate:
+        condition: service_completed_successfully
+    environment:
+      DB_HOST: sigweb-db
+      DB_PORT: "5432"
+      DB_NAME: sigweb_caprinu
+      DB_USER: sigweb
+      DB_PASSWORD: ${DB_PASSWORD}
+    # 127.0.0.1: só o nginx do próprio servidor acessa a API.
+    # Padrão 8000, que é o endereço de desenvolvimento do frontend/app.js.
+    # Se a 8000 do host já estiver ocupada, mude API_PORT no .env (e o nginx).
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+
+  # Painel de cadastro (Django). É por aqui que técnicos e pesquisadores
+  # cadastram comunidades, coletas e parceiros; o mapa lê o resultado.
+  admin:
+    build: ./admin
+    restart: unless-stopped
+    depends_on:
+      sigweb-db:
+        condition: service_healthy
+      sigweb-migrate:
+        condition: service_completed_successfully
+    environment:
+      SECRET_KEY: ${DJANGO_SECRET_KEY:?defina DJANGO_SECRET_KEY no .env}
+      DEBUG: ${DJANGO_DEBUG:-False}
+      ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      CSRF_TRUSTED_ORIGINS: ${DJANGO_CSRF_TRUSTED_ORIGINS:-}
+      USAR_HTTPS: ${DJANGO_USAR_HTTPS:-False}
+      DB_HOST: sigweb-db
+      DB_PORT: "5432"
+      DB_NAME: sigweb_caprinu
+      DB_USER: sigweb
+      DB_PASSWORD: ${DB_PASSWORD}
+      DJANGO_SUPERUSER_USERNAME: ${DJANGO_SUPERUSER_USERNAME:-}
+      DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD:-}
+      DJANGO_SUPERUSER_EMAIL: ${DJANGO_SUPERUSER_EMAIL:-admin@example.com}
+    # Porta ADMIN_PORT (padrão 8002) no host; o nginx do servidor repassa para ela.
+    ports:
+      - "127.0.0.1:${ADMIN_PORT:-8002}:8000"
+
+volumes:
+  pgdata:

@@ -1,0 +1,30 @@
+# Serviço systemd do backend FastAPI — ALTERNATIVA ao serviço `api` do docker-compose.
+# Use um ou outro, nunca os dois ao mesmo tempo (disputam a mesma porta).
+# Instalação no servidor:
+#   sudo cp deploy/sigweb-api.service /etc/systemd/system/
+#   (edite DB_PASSWORD abaixo antes de copiar)
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now sigweb-api
+# Logs: journalctl -u sigweb-api -f
+
+[Unit]
+Description=SIGWeb Caprinu API (FastAPI/Uvicorn)
+After=network.target postgresql.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/sigweb-caprinu/backend
+# Postgres do container dedicado postgis-sigweb, publicado em 127.0.0.1:5433
+Environment="DB_HOST=localhost"
+Environment="DB_PORT=5433"
+Environment="DB_NAME=sigweb_caprinu"
+Environment="DB_USER=sigweb"
+Environment="DB_PASSWORD=TROQUE_PELA_SENHA_DO_USUARIO_SIGWEB"
+# Porta 8000, a mesma do API_PORT padrão do docker-compose
+ExecStart=/var/www/sigweb-caprinu/backend/venv/bin/uvicorn main:app --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

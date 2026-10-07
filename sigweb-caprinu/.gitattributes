@@ -1,0 +1,7 @@
+# Força final de linha LF: um .sh com CRLF quebra dentro do container Linux
+# ("set: Illegal option -"). Vale para quem clona no Windows também.
+*.sh  text eol=lf
+*.sql text eol=lf
+*.py  text eol=lf
+*.yml text eol=lf
+Dockerfile text eol=lf

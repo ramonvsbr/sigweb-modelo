@@ -1,0 +1,50 @@
+-- Dados de EXEMPLO, só para ver o mapa funcionando logo após a instalação.
+-- Comunidades, municípios e parceiros abaixo são ilustrativos: apague tudo e
+-- cadastre os dados reais pelo painel (admin do Django).
+
+-- Garante que o banco está limpo antes da carga
+TRUNCATE acoes_parceiros, locais_parceiros, parceiros, coletas_producao, comunidades
+    RESTART IDENTITY CASCADE;
+
+-- 1. Comunidades de exemplo (região do Semiárido)
+-- geom é coluna gerada: informe apenas latitude e longitude.
+INSERT INTO comunidades (nome, municipio, informacoes_adicionais, latitude, longitude) VALUES
+('Associação Vereda do Bode', 'Petrolina', 'Região de sequeiro, forte tradição em caprinos.', -9.3845, -40.2534),
+('Cooperativa Mandacaru', 'Petrolina', 'Próxima à bacia do São Francisco.', -9.4021, -40.5012),
+('Comunidade Angico Seco', 'Uauá', 'Grupo de mulheres produtoras de derivados de leite.', -10.1245, -39.8214),
+('Associação Caroá', 'Uauá', 'Foco em melhoramento genético de ovinos.', -9.8912, -39.5055),
+('Sítio Umbuzeiro Grande', 'Petrolina', 'Produção integrada com palma forrageira.', -9.6541, -40.1123),
+('Comunidade Caatinga Viva', 'Casa Nova', 'Projeto piloto de manejo sustentável da vegetação nativa.', -9.2104, -40.7891),
+('Associação Riacho do Mel', 'Santa Maria da Boa Vista', 'Pequenos produtores familiares agrupados.', -8.7541, -39.2987),
+('Cooperativa Bode Rei', 'Serra Talhada', 'Famosa pela feira de animais local.', -7.8845, -38.9542),
+('Associação Sertão Verde', 'Casa Nova', 'Dificuldade histórica de acesso à água, uso de cisternas.', -10.5012, -41.1245),
+('Comunidade Algodões', 'Petrolina', 'Parceria com o poder público para assistência técnica.', -9.1124, -39.9512);
+
+-- 2. Coletas zootécnicas (comunidade_id 1 a 10)
+INSERT INTO coletas_producao (comunidade_id, data_coleta, total_produtores, qtd_caprinos, qtd_ovinos, criacao_extensiva, criacao_semi_extensiva, criacao_intensiva, escrituracao_sim, escrituracao_nao, observacoes) VALUES
+(1, '2026-03-15', 18, 450, 120, 15, 3, 0, 5, 13, 'Necessitam de capacitação urgente em manejo reprodutivo.'),
+(2, '2026-03-20', 32, 890, 410, 10, 20, 2, 18, 14, 'Boa organização interna. Resfriador de leite comunitário ativo.'),
+(3, '2026-04-02', 12, 210, 80,  12, 0, 0, 2, 10, 'Foco em queijos artesanais. Demanda por selo de inspeção.'),
+(4, '2026-04-10', 25, 150, 950, 5, 15, 5, 22, 3, 'Rebanho ovino de alta qualidade genética (Santa Inês).'),
+(5, '2026-04-18', 8,  190, 110, 4, 4, 0, 0, 8, 'Suplementação alimentar baseada estritamente em palma.'),
+(6, '2026-04-25', 40, 1200, 350, 38, 2, 0, 10, 30, 'Área territorial vasta, animais criados soltos na caatinga.'),
+(7, '2026-05-01', 15, 310, 240, 10, 5, 0, 4, 11, 'Produtores relatam ataques esporádicos de predadores nativos.'),
+(8, '2026-05-05', 55, 1500, 1100, 20, 30, 5, 45, 10, 'Maior associação da microrregião. Controle zootécnico excelente.'),
+(9, '2026-05-12', 10, 180, 90,  10, 0, 0, 1, 9, 'Período de estiagem severa afetando o escore corporal dos animais.'),
+(10, '2026-05-20', 22, 400, 530, 8, 14, 0, 12, 10, 'Contam com apoio veterinário trimestral de uma ONG parceira.');
+
+-- 3. Parceiros de exemplo, com uma localização cada
+INSERT INTO parceiros (nome, sigla) VALUES
+('Banco do Nordeste', 'BNB'),
+('SEBRAE', 'SEBRAE'),
+('SENAR', 'SENAR');
+
+INSERT INTO locais_parceiros (parceiro_id, nome, endereco, latitude, longitude) VALUES
+(1, 'Agência Petrolina', 'Petrolina - PE', -9.3891, -40.5027),
+(2, 'Escritório Regional de Petrolina', 'Petrolina - PE', -9.3987, -40.5010),
+(3, 'Sede Regional', 'Petrolina - PE', -9.3950, -40.4950);
+
+-- 4. Ações de exemplo (coleta_id 2 e 3)
+INSERT INTO acoes_parceiros (coleta_id, parceiro_id, data_acao, descricao) VALUES
+(2, 3, '2026-02-10', 'Curso de manejo sanitário de caprinos.'),
+(3, 2, '2026-03-05', 'Oficina de boas práticas para queijos artesanais.');
