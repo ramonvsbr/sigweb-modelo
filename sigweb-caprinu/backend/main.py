@@ -1,12 +1,12 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional
+import logging
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
 app = FastAPI()
+log = logging.getLogger("sigweb.api")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,33 +16,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 1. VALIDADOR DE DADOS (Pydantic)
-# Garante que o frontend envie os dados nos formatos corretos
-class NovaComunidadeForm(BaseModel):
-    nome: str
-    informacoes_adicionais: Optional[str] = None
-    total_produtores: int
-    qtd_caprinos: int
-    qtd_ovinos: int
-    criacao_extensiva: int
-    criacao_semi_extensiva: int
-    criacao_intensiva: int
-    escrituracao_sim: int
-    escrituracao_nao: int
-    observacoes: Optional[str] = None
-    latitude: float
-    longitude: float
+# 1. CONEXÃO COM O BANCO (Com a correção de UTF-8 inclusa)
+# Defina as variáveis de ambiente DB_HOST, DB_NAME, DB_USER e DB_PASSWORD (no
+# Docker, vêm do .env; sem Docker, ver deploy/sigweb-api.service). Host, porta,
+# banco e usuário têm padrão local; a SENHA NÃO tem padrão de propósito: a API
+# se recusa a subir sem ela, para nunca rodar com uma senha conhecida.
+DB_PASSWORD = os.getenv("DB_PASSWORD")
+if not DB_PASSWORD:
+    raise RuntimeError(
+        "A variável de ambiente DB_PASSWORD não está definida. "
+        "Defina-a no .env (Docker) ou no ambiente do serviço."
+    )
 
-# 2. CONEXÃO COM O BANCO (Com a correção de UTF-8 inclusa)
-# Em produção, defina as variáveis de ambiente DB_HOST, DB_NAME, DB_USER e
-# DB_PASSWORD (ver deploy/sigweb-api.service); os valores abaixo são o padrão local.
 def get_db_connection():
     return psycopg2.connect(
         host=os.getenv("DB_HOST", "localhost"),
         port=os.getenv("DB_PORT", "5432"),
         database=os.getenv("DB_NAME", "sigweb_caprinu"),
         user=os.getenv("DB_USER", "postgres"),
-        password=os.getenv("DB_PASSWORD", "inovi"),
+        password=DB_PASSWORD,
         client_encoding="utf8",
         cursor_factory=RealDictCursor
     )
@@ -57,47 +49,16 @@ async def rota_teste():
         versao = cursor.fetchone()
         cursor.close(); conn.close()
         return {"status": "Sucesso!", "postgis": versao}
-    except Exception as e:
-        return {"status": "Erro", "detalhes": str(e)}
+    except Exception:
+        # O detalhe vai para o log do servidor, não para quem chamou a rota.
+        log.exception("Falha no teste de conexão com o banco")
+        return {"status": "Erro", "detalhes": "Banco de dados indisponível. Veja o log da API."}
 
-# 3. ROTA POST: Salva a comunidade e os dados zootécnicos
-@app.post("/api/comunidades", status_code=status.HTTP_201_CREATED)
-async def cadastrar_comunidade(dados: NovaComunidadeForm):
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    try:
-        # Insere na tabela comunidades e retorna o ID gerado.
-        # geom é coluna gerada no banco: basta gravar latitude/longitude.
-        query_c = """
-            INSERT INTO comunidades (nome, informacoes_adicionais, latitude, longitude)
-            VALUES (%s, %s, %s, %s)
-            RETURNING id;
-        """
-        cursor.execute(query_c, (dados.nome, dados.informacoes_adicionais, dados.latitude, dados.longitude))
-        novo_id = cursor.fetchone()['id']
+# Não há rota de escrita nesta API: ela só lê. O cadastro de comunidades e
+# coletas é feito pelo painel Django (admin/), que grava direto no banco.
+# (A antiga rota POST /api/comunidades foi removida: não tinha autenticação.)
 
-        # Insere na tabela de dados zootécnicos usando o ID da comunidade recém-criada
-        query_p = """
-            INSERT INTO coletas_producao 
-            (comunidade_id, total_produtores, qtd_caprinos, qtd_ovinos, criacao_extensiva, criacao_semi_extensiva, criacao_intensiva, escrituracao_sim, escrituracao_nao, observacoes) 
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
-        """
-        cursor.execute(query_p, (
-            novo_id, dados.total_produtores, dados.qtd_caprinos, dados.qtd_ovinos, 
-            dados.criacao_extensiva, dados.criacao_semi_extensiva, dados.criacao_intensiva, 
-            dados.escrituracao_sim, dados.escrituracao_nao, dados.observacoes
-        ))
-        
-        # Confirma a transação nas duas tabelas
-        conn.commit()
-        return {"status": "sucesso", "id_cadastrado": novo_id}
-    except Exception as e:
-        conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        cursor.close(); conn.close()
-
-# 4. ROTA GET (GeoJSON): Transforma os dados do banco direto no formato do mapa
+# 2. ROTA GET (GeoJSON): Transforma os dados do banco direto no formato do mapa
 @app.get("/api/comunidades/geojson")
 async def obter_geojson():
     conn = get_db_connection()
@@ -115,6 +76,7 @@ async def obter_geojson():
                     'geometry', ST_AsGeoJSON(geom)::jsonb,
                     'properties', jsonb_build_object(
                         'nome', nome, 
+                        'municipio', municipio,
                         'informacoes_adicionais', informacoes_adicionais, 
                         'total_produtores', total_produtores, 
                         'qtd_caprinos', qtd_caprinos, 
@@ -141,7 +103,9 @@ async def obter_geojson():
         else:
             return {"type": "FeatureCollection", "features": []}
             
-    except Exception as e: 
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        # O detalhe vai para o log do servidor, não para o navegador.
+        log.exception("Falha ao montar o GeoJSON das comunidades")
+        raise HTTPException(status_code=500, detail="Erro interno ao carregar as comunidades.")
     finally: 
         cursor.close(); conn.close()

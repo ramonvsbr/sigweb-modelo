@@ -63,6 +63,15 @@ Pensado para um domínio dedicado, por exemplo `sigweb.exemplo.org`:
 
 Fora de `localhost`, o `app.js` busca os dados em `/api/comunidades/geojson`, no próprio site.
 
+### Migrando do endereço antigo (`/mapas`)
+
+O `app.js` antigo busca os dados em `/mapas/api/...`; o novo busca em `/api/...`.
+O `nginx-sigweb.conf` já atende os dois caminhos (`/mapas/api/` é repassado à API como `/api/`),
+então trocar os arquivos do frontend não derruba o site. Se o `/mapas` antigo roda em
+**outro** servidor, não troque o `app.js` lá antes de ele ter também um `location /api/`
+para a API; ou mantenha o `app.js` antigo até apontar tudo para o domínio novo.
+Quando a migração acabar, apague o bloco "Compatibilidade" do nginx.
+
 A API também pode rodar sem Docker, pelo `deploy/sigweb-api.service`
 (alternativa ao serviço `api` do compose, nunca os dois juntos).
 
